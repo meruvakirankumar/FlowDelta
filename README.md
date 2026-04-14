@@ -240,22 +240,152 @@ a ready-to-run `generated_tests/test_<flow_id>.py`.
 
 ---
 
+## Sprint 2 – Integrations
+
+### DAPLauncher – managed debugpy subprocess
+
+`DAPLauncher` wraps the full `debugpy` lifecycle so you never need to start the server manually:
+
+```python
+from src.state_tracker import DAPLauncher
+
+# Script mode: spawn debugpy, set breakpoints, collect snapshots
+async with DAPLauncher(
+    "src/app.py",
+    breakpoints={"src/app.py": [18, 35, 60]},
+) as client:
+    await client.configuration_done()
+    async for snapshot in client.iter_breakpoint_hits():
+        process(snapshot)
+
+# Attach mode: connect to an already-running debugpy server
+async with DAPLauncher.attach(pid=12345, port=5678) as client:
+    ...
+
+# One-liner helper
+snapshots = await DAPLauncher.run_and_capture(
+    "src/app.py",
+    breakpoints={"src/app.py": [10, 42]},
+)
+```
+
+Internals: starts `python -m debugpy --listen HOST:PORT --wait-for-client SCRIPT`,
+polls the TCP port with a configurable timeout, then hands off to `DAPClient`.
+
+---
+
+### LSPAnnotator – type-aware state capture
+
+`LSPAnnotator` enriches each `StateSnapshot` with inferred type information
+from a running language server (pylsp or pyright):
+
+```python
+from src.state_tracker import LSPClient, LSPAnnotator
+
+async with LSPClient(root_path=".", server="pylsp") as lsp:
+    annotator = LSPAnnotator(lsp)
+
+    # Annotate all snapshots in a trace (opens files once, caches source)
+    type_maps = await annotator.annotate_trace(trace)
+    # → [{"cart": "Cart", "user_id": "str", "qty": "int"}, ...]
+
+    # Or annotate a single snapshot
+    types = await annotator.annotate(snapshot)
+```
+
+The annotator scans backward from the snapshot's line to find each variable,
+calls `textDocument/hover` at that column, and parses the type string.
+Falls back to Python `type()` introspection when LSP cannot resolve a symbol.
+
+This enables the test generator to produce richer assertions:
+
+```python
+assert isinstance(result['cart'], Cart)      # from LSP type
+assert result['qty'] >= 0                    # from numeric type
+```
+
+---
+
+### JavaScript / TypeScript support end-to-end
+
+`ASTAnalyzer` fully supports `.js` / `.mjs` / `.cjs` files (TypeScript
+support is available when `tree-sitter-typescript` is installed).
+
+The sample application is now available in both languages:
+
+| File | Language |
+|---|---|
+| [examples/sample_app/ecommerce.py](examples/sample_app/ecommerce.py) | Python |
+| [examples/sample_app/ecommerce.js](examples/sample_app/ecommerce.js) | JavaScript (ES2020) |
+
+Analyze a JS project exactly the same way:
+
+```bash
+flowdelta analyze src/frontend/ --output js_flows.json
+```
+
+The `CallGraphBuilder` and `LLMFlowMapper` are language-agnostic — they
+operate on the `ASTAnalysis` data model regardless of source language.
+
+---
+
+### SQLiteQueryAPI – rich delta history queries
+
+When `format="sqlite"` is configured, `SQLiteQueryAPI` gives you eight
+query methods over stored run history:
+
+```python
+from src.delta_engine import SQLiteQueryAPI
+
+with SQLiteQueryAPI(store_path=".flowdelta/runs") as api:
+
+    # What flows exist and how often do they run?
+    api.flows_summary()
+    # → [{"flow_id": "checkout", "total_runs": 12, "golden_runs": 1, ...}]
+
+    # Timeline of runs for a flow
+    api.run_history("checkout", limit=20)
+
+    # Which variables change most? (identify flaky state)
+    api.hot_variables("checkout", limit=5)
+    # → [{"variable": "total", "change_count": 36, "change_types": {...}}]
+
+    # Trend of change volume across runs (for charting)
+    api.regression_trend("checkout")
+
+    # Find all runs where a specific variable changed
+    api.search_changes("status", flow_id="checkout", change_type="changed")
+
+    # Side-by-side comparison of two runs
+    api.compare_runs(run_id_a="abc12345", run_id_b="def67890")
+    # → {"only_in_a": [...], "only_in_b": [...], "in_both": [...]}
+
+    # Delete a run and reclaim space
+    api.delete_run("old-run-id")
+    api.vacuum()
+```
+
+---
+
 ## Project Structure
 
 ```
 FlowDelta/
 ├── src/
 │   ├── flow_identifier/
-│   │   ├── ast_analyzer.py       # tree-sitter AST parsing
+│   │   ├── ast_analyzer.py       # tree-sitter AST parsing (Python + JS/TS)
 │   │   ├── call_graph.py         # NetworkX call graph builder
 │   │   └── llm_flow_mapper.py    # LLM flow clustering
 │   ├── state_tracker/
 │   │   ├── dap_client.py         # asyncio DAP client (debugpy)
+│   │   ├── dap_launcher.py       # ★ Sprint 2: managed debugpy subprocess
 │   │   ├── lsp_client.py         # LSP stdio client (pylsp/pyright)
+│   │   ├── lsp_annotator.py      # ★ Sprint 2: type annotation for snapshots
 │   │   └── trace_recorder.py     # sys.settrace + DAP recorders
 │   ├── delta_engine/
 │   │   ├── state_diff.py         # DeepDiff wrapper → VariableDelta
-│   │   └── delta_store.py        # JSONL / SQLite persistence
+│   │   ├── delta_store.py        # JSONL / SQLite persistence
+│   │   └── sqlite_query.py       # ★ Sprint 2: rich SQL query API
 │   ├── test_generator/
 │   │   ├── assertion_gen.py      # delta → assertion strategies
 │   │   ├── llm_test_writer.py    # LLM names + docstrings
@@ -264,12 +394,17 @@ FlowDelta/
 ├── config/config.yaml
 ├── templates/test_module.py.j2
 ├── examples/sample_app/
-│   ├── ecommerce.py              # 3-flow sample application
+│   ├── ecommerce.py              # 3-flow sample application (Python)
+│   ├── ecommerce.js              # ★ Sprint 2: same app in JavaScript
 │   └── run_flows.py              # end-to-end demo script
 ├── tests/
 │   ├── test_ast_analyzer.py
 │   ├── test_delta_engine.py
-│   └── test_assertion_gen.py
+│   ├── test_assertion_gen.py
+│   ├── test_dap_launcher.py      # ★ Sprint 2
+│   ├── test_lsp_annotator.py     # ★ Sprint 2
+│   ├── test_js_flow.py           # ★ Sprint 2
+│   └── test_sqlite_query.py      # ★ Sprint 2
 ├── generated_tests/              # output of Phase 4 (gitignored)
 ├── .flowdelta/runs/              # trace + delta storage (gitignored)
 ├── pyproject.toml
@@ -288,11 +423,12 @@ FlowDelta/
 - [x] DeepDiff-based delta engine
 - [x] JSONL delta store
 
-### Sprint 2 – Integrations
-- [ ] Full DAP client testing with `debugpy` subprocess
-- [ ] LSP type annotation for captured variables
-- [ ] JavaScript / TypeScript support end-to-end
-- [ ] SQLite storage with query API
+### Sprint 2 – Integrations ✅
+- [x] `DAPLauncher` – managed `debugpy` subprocess lifecycle with attach mode
+- [x] `LSPAnnotator` – type annotation for captured variables via pylsp/pyright
+- [x] JavaScript end-to-end: JS sample app + `ASTAnalyzer` + call graph + flow identification
+- [x] `SQLiteQueryAPI` – 8 rich SQL query methods (summary, history, hot vars, trend, search, compare, delete, vacuum)
+- [x] Full test coverage for all Sprint 2 components (mocked + integration)
 
 ### Sprint 3 – Test Quality
 - [ ] Invariant detection (variables that should never change)

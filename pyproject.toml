@@ -16,6 +16,8 @@ dependencies = [
     "dataclasses-json>=0.6.4",
     "jinja2>=3.1.4",
     "pytest>=8.2.0",
+    "pytest-asyncio>=0.24.0",
+    "anyio>=4.0.0",
     "click>=8.1.7",
     "rich>=13.7.0",
 ]
@@ -29,3 +31,4 @@ build-backend = "setuptools.backends.legacy:build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
