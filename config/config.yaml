@@ -1,0 +1,40 @@
+llm:
+  provider: openai                  # openai | anthropic
+  model: gpt-4o
+  temperature: 0.2
+  api_key_env: OPENAI_API_KEY       # env var holding the key
+
+flow_identifier:
+  languages:
+    - python
+    - javascript
+  min_flow_size: 2                  # min functions to form a named flow
+  max_flows: 20
+
+state_tracker:
+  backend: systrace                 # systrace | dap
+  dap:
+    host: 127.0.0.1
+    port: 5678
+    connect_timeout: 10
+  lsp:
+    enabled: true
+    python_server: pylsp            # pylsp | pyright
+  capture:
+    locals: true
+    globals: false                  # globals are usually too noisy
+    max_depth: 4                    # max object serialization depth
+    skip_private: true              # skip vars starting with _
+
+delta_engine:
+  store_path: .flowdelta/runs       # relative to project root
+  format: jsonl                     # jsonl | sqlite
+  diff_options:
+    ignore_order: false
+    significant_digits: 5
+
+test_generator:
+  output_dir: generated_tests
+  framework: pytest                 # pytest | unittest
+  llm_augment: true                 # use LLM to write docstrings/names
+  template: templates/test_module.py.j2

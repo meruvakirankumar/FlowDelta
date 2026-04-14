@@ -1,0 +1,51 @@
+# FlowDelta generated test module
+# Flow:    {{ spec.flow_id }}
+# Run ID:  {{ spec.run_id }}
+# Generated: {{ generated_at }}
+#
+# DO NOT EDIT — regenerate with:  flowdelta generate --flow {{ spec.flow_id }}
+
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def app_under_test():
+    """
+    Replace this fixture with your own application setup.
+    The fixture should return the object / function under test so that
+    each test can call it and capture its result in `result`.
+    """
+    raise NotImplementedError(
+        "Implement the 'app_under_test' fixture for flow '{{ spec.flow_id }}'"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+{% for group in spec.groups %}
+def test_{{ group.test_name | default("transition_" ~ loop.index) }}(app_under_test):
+    """{{ group.docstring | default("Validates state transition from " ~ group.from_location ~ " to " ~ group.to_location ~ ".") }}
+
+    Transition: {{ group.from_location }}
+             → {{ group.to_location }}
+    """
+    result = app_under_test()  # replace with actual invocation
+
+    # --- Auto-generated assertions (FlowDelta) ---
+{% for assertion in group.assertions %}
+    {{ assertion.code }}
+{% endfor %}
+{% if group.extra_assertions is defined %}
+    # --- LLM-suggested assertions ---
+{% for ea in group.extra_assertions %}
+    {{ ea }}
+{% endfor %}
+{% endif %}
+
+{% endfor %}
