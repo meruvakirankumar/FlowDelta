@@ -240,13 +240,15 @@ class StateDiffer:
         # Type changed
         for path, change in raw.get("type_changes", {}).items():
             name = self._extract_var_name(path)
+            def _type_name(t: Any) -> str:
+                return t.__name__ if isinstance(t, type) else str(t)
             changes.append(VariableDelta(
                 name=name,
                 change_type="type_changed",
                 old_value=change.get("old_value"),
                 new_value=change.get("new_value"),
-                old_type=change.get("old_type", type(change.get("old_value")).__name__),
-                new_type=change.get("new_type", type(change.get("new_value")).__name__),
+                old_type=_type_name(change.get("old_type", type(change.get("old_value")))),
+                new_type=_type_name(change.get("new_type", type(change.get("new_value")))),
                 deep_path=path,
             ))
 

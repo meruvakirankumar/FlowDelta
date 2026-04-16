@@ -135,11 +135,13 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
         self,
         model: str = "gpt-4o",
         api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         max_flows: int = 20,
     ) -> None:
         self.model = model
         self.max_flows = max_flows
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self._base_url = base_url
 
     # ------------------------------------------------------------------
     # Public API
@@ -200,7 +202,10 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
         except ImportError as exc:
             raise ImportError("Install openai: pip install openai>=1.0.0") from exc
 
-        client = OpenAI(api_key=self._api_key)
+        kwargs = {"api_key": self._api_key}
+        if self._base_url:
+            kwargs["base_url"] = self._base_url
+        client = OpenAI(**kwargs)
         system = self._SYSTEM_PROMPT.format(max_flows=self.max_flows)
         response = client.chat.completions.create(
             model=self.model,

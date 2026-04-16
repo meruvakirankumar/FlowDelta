@@ -64,9 +64,11 @@ Return ONLY valid JSON with this schema (no markdown, no explanation):
         self,
         model: str = "gpt-4o",
         api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
     ) -> None:
         self.model = model
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self._base_url = base_url
 
     def augment(self, spec: TestSpec) -> TestSpec:
         """
@@ -110,7 +112,10 @@ Return ONLY valid JSON with this schema (no markdown, no explanation):
         except ImportError as exc:
             raise ImportError("Install openai: pip install openai>=1.0.0") from exc
 
-        client = OpenAI(api_key=self._api_key)
+        kwargs = {"api_key": self._api_key}
+        if self._base_url:
+            kwargs["base_url"] = self._base_url
+        client = OpenAI(**kwargs)
         resp = client.chat.completions.create(
             model=self.model,
             temperature=0.2,

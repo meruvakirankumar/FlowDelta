@@ -31,3 +31,23 @@ anyio>=4.0.0
 # CLI & output
 click>=8.1.7
 rich>=13.7.0
+
+# Environment variable loading
+python-dotenv>=1.0.0
+
+# NVIDIA AI Endpoints (LangChain wrapper for MiniMax / NVIDIA models)
+langchain-nvidia-ai-endpoints>=0.3.0
+
+# Sprint 3 – property-based & mutation testing
+hypothesis>=6.100.0
+mutmut>=2.4.4
+
+# Sprint 4 – web dashboard (optional: install with pip install flowdelta[dashboard])
+fastapi>=0.110.0
+uvicorn>=0.29.0
+httpx>=0.27.0
+
+# Sprint 4 – OpenTelemetry export (optional: install with pip install flowdelta[otel])
+opentelemetry-sdk>=1.24.0
+opentelemetry-exporter-otlp-proto-grpc>=1.24.0
+

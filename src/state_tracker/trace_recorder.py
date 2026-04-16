@@ -174,7 +174,7 @@ class SysTraceRecorder:
         return simple_name in self.watch_functions
 
     def _capture(self, frame: types.FrameType, event: str) -> None:
-        locals_raw = frame.f_locals
+        locals_raw = dict(frame.f_locals)   # dict() handles FrameLocalsProxy (Python 3.13+)
         serialized = self._serialize(locals_raw, depth=0)
         self._seq += 1
         snapshot = StateSnapshot(

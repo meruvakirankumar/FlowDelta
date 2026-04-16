@@ -1,8 +1,11 @@
 llm:
-  provider: openai                  # openai | anthropic
-  model: gpt-4o
-  temperature: 0.2
-  api_key_env: OPENAI_API_KEY       # env var holding the key
+  provider: nvidia                  # openai | anthropic | nvidia
+  model: minimaxai/minimax-m2.7
+  temperature: 1
+  top_p: 0.95
+  max_tokens: 8192
+  invoke_url_env: NVIDIA_INVOKE_URL  # env var holding the endpoint URL
+  api_key_env: NVIDIA_API_KEY        # env var holding the key
 
 flow_identifier:
   languages:

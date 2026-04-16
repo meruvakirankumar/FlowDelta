@@ -430,17 +430,17 @@ FlowDelta/
 - [x] `SQLiteQueryAPI` – 8 rich SQL query methods (summary, history, hot vars, trend, search, compare, delete, vacuum)
 - [x] Full test coverage for all Sprint 2 components (mocked + integration)
 
-### Sprint 3 – Test Quality
-- [ ] Invariant detection (variables that should never change)
-- [ ] Property-based test generation (Hypothesis integration)
-- [ ] Mutation testing feedback loop
-- [ ] CI/CD integration (GitHub Actions example)
+### Sprint 3 – Test Quality ✅
+- [x] Invariant detection (variables that should never change)
+- [x] Property-based test generation (Hypothesis integration)
+- [x] Mutation testing feedback loop
+- [x] CI/CD integration (GitHub Actions example)
 
-### Sprint 4 – Scale & Observability
-- [ ] OpenTelemetry trace export
-- [ ] Web dashboard for delta visualization
-- [ ] Multi-run regression trend charts
-- [ ] Support for Java (LSP4J) and C# (OmniSharp) via DAP
+### Sprint 4 – Scale & Observability ✅
+- [x] OpenTelemetry trace export
+- [x] Web dashboard for delta visualization
+- [x] Multi-run regression trend charts
+- [x] Support for Java (LSP4J) and C# (OmniSharp) via DAP
 
 ---
 
