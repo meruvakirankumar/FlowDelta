@@ -8,13 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import socket
-import sys
 import types
 import unittest
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 from src.state_tracker.dap_launcher import DAPLauncher, _DEFAULT_HOST, _DEFAULT_PORT

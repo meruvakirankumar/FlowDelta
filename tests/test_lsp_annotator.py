@@ -7,11 +7,7 @@ Mocks the LSPClient so no real language server is required.
 from __future__ import annotations
 
 import asyncio
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 from src.state_tracker.dap_client import StateSnapshot, StackFrame
@@ -22,12 +18,7 @@ from src.state_tracker.trace_recorder import FlowTrace
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-def make_snapshot(seq, locals_, file="app.py", line=5, fn="my_fn"):
-    return StateSnapshot(
-        event="call", thread_id=0, file=file,
-        line=line, function=fn, locals=locals_, sequence=seq,
-    )
+from helpers import make_snapshot
 
 
 def make_mock_lsp(hover_result: str = "int"):

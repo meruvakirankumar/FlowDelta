@@ -9,7 +9,7 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -140,25 +140,7 @@ class TestOTelExporter:
 # 2. TrendChartGenerator
 # ══════════════════════════════════════════════════════════════════════════
 
-class _FakeDeltaStore:
-    """Mimics DeltaStore for trend-chart and dashboard tests."""
-
-    store_path = ".flowdelta/test"
-
-    def __init__(self, runs: List[Dict], deltas: Optional[Dict] = None):
-        self._runs = runs
-        self._deltas = deltas or {}
-
-    def list_runs(self, flow_id: str = None):
-        if flow_id:
-            return [r for r in self._runs if r.get("flow_id") == flow_id]
-        return self._runs
-
-    def load_delta(self, run_id: str):
-        return self._deltas.get(run_id)
-
-    def load_trace(self, run_id: str):
-        return None
+from helpers import FakeDeltaStore as _FakeDeltaStore
 
 
 class TestTrendChartGenerator:
@@ -492,9 +474,7 @@ class TestCSharpDAPLauncher:
 # 5. JavaASTAnalyzer / CSharpASTAnalyzer
 # ══════════════════════════════════════════════════════════════════════════
 
-class TestJavaASTAnalyzer:
-
-    _SAMPLE_JAVA = """\
+_JAVA_SAMPLE = """\
 public class Checkout {
     private double total;
 
@@ -513,46 +493,7 @@ public class Checkout {
 }
 """
 
-    def test_import(self):
-        from src.multi_lang import JavaASTAnalyzer
-        assert JavaASTAnalyzer
-
-    def test_analyze_extracts_methods(self, tmp_path):
-        from src.multi_lang import JavaASTAnalyzer
-        src = tmp_path / "Checkout.java"
-        src.write_text(self._SAMPLE_JAVA)
-        result = JavaASTAnalyzer().analyze(src)
-        names = [f["name"] for f in result["functions"]]
-        assert "addItem" in names
-        assert "updateCart" in names
-
-    def test_analyze_identifies_language(self, tmp_path):
-        from src.multi_lang import JavaASTAnalyzer
-        src = tmp_path / "Checkout.java"
-        src.write_text(self._SAMPLE_JAVA)
-        result = JavaASTAnalyzer().analyze(src)
-        assert result["language"] == "java"
-
-    def test_analyze_finds_calls(self, tmp_path):
-        from src.multi_lang import JavaASTAnalyzer
-        src = tmp_path / "Checkout.java"
-        src.write_text(self._SAMPLE_JAVA)
-        result = JavaASTAnalyzer().analyze(src)
-        # addItem calls updateCart
-        add_item = next(f for f in result["functions"] if f["name"] == "addItem")
-        assert "updateCart" in add_item["calls"]
-
-    def test_analyze_empty_file(self, tmp_path):
-        from src.multi_lang import JavaASTAnalyzer
-        src = tmp_path / "Empty.java"
-        src.write_text("")
-        result = JavaASTAnalyzer().analyze(src)
-        assert result["functions"] == []
-
-
-class TestCSharpASTAnalyzer:
-
-    _SAMPLE_CS = """\
+_CS_SAMPLE = """\
 using System;
 
 public class Checkout {
@@ -573,48 +514,66 @@ public class Checkout {
 }
 """
 
-    def test_import(self):
-        from src.multi_lang import CSharpASTAnalyzer
+_LANG_PARAMS = pytest.mark.parametrize(
+    "lang,src_code,filename,exp_methods,caller_fn,callee_fn",
+    [
+        ("java",   _JAVA_SAMPLE, "Checkout.java", ["addItem", "updateCart"], "addItem",  "updateCart"),
+        ("csharp", _CS_SAMPLE,   "Checkout.cs",   ["AddItem", "UpdateCart"], "AddItem",  "UpdateCart"),
+    ],
+    ids=["java", "csharp"],
+)
+
+
+class TestRegexASTAnalyzers:
+    """Parametrized tests covering both JavaASTAnalyzer and CSharpASTAnalyzer."""
+
+    @staticmethod
+    def _cls(lang: str):
+        from src.multi_lang import JavaASTAnalyzer, CSharpASTAnalyzer
+        return JavaASTAnalyzer if lang == "java" else CSharpASTAnalyzer
+
+    def test_imports(self):
+        from src.multi_lang import JavaASTAnalyzer, CSharpASTAnalyzer
+        assert JavaASTAnalyzer
         assert CSharpASTAnalyzer
 
-    def test_analyze_extracts_methods(self, tmp_path):
-        from src.multi_lang import CSharpASTAnalyzer
-        src = tmp_path / "Checkout.cs"
-        src.write_text(self._SAMPLE_CS)
-        result = CSharpASTAnalyzer().analyze(src)
-        names = [f["name"] for f in result["functions"]]
-        assert "AddItem" in names
-        assert "UpdateCart" in names
+    @_LANG_PARAMS
+    def test_analyze_extracts_methods(self, lang, src_code, filename, exp_methods, caller_fn, callee_fn, tmp_path):
+        f = tmp_path / filename
+        f.write_text(src_code)
+        result = self._cls(lang)().analyze(f)
+        names = [fn["name"] for fn in result["functions"]]
+        for m in exp_methods:
+            assert m in names
 
-    def test_analyze_identifies_language(self, tmp_path):
-        from src.multi_lang import CSharpASTAnalyzer
-        src = tmp_path / "Checkout.cs"
-        src.write_text(self._SAMPLE_CS)
-        result = CSharpASTAnalyzer().analyze(src)
-        assert result["language"] == "csharp"
+    @_LANG_PARAMS
+    def test_analyze_identifies_language(self, lang, src_code, filename, exp_methods, caller_fn, callee_fn, tmp_path):
+        f = tmp_path / filename
+        f.write_text(src_code)
+        result = self._cls(lang)().analyze(f)
+        assert result["language"] == lang
 
-    def test_analyze_finds_calls(self, tmp_path):
-        from src.multi_lang import CSharpASTAnalyzer
-        src = tmp_path / "Checkout.cs"
-        src.write_text(self._SAMPLE_CS)
-        result = CSharpASTAnalyzer().analyze(src)
-        add_item = next(f for f in result["functions"] if f["name"] == "AddItem")
-        assert "UpdateCart" in add_item["calls"]
+    @_LANG_PARAMS
+    def test_analyze_finds_calls(self, lang, src_code, filename, exp_methods, caller_fn, callee_fn, tmp_path):
+        f = tmp_path / filename
+        f.write_text(src_code)
+        result = self._cls(lang)().analyze(f)
+        caller = next(fn for fn in result["functions"] if fn["name"] == caller_fn)
+        assert callee_fn in caller["calls"]
 
-    def test_analyze_empty_file(self, tmp_path):
-        from src.multi_lang import CSharpASTAnalyzer
-        src = tmp_path / "Empty.cs"
-        src.write_text("")
-        result = CSharpASTAnalyzer().analyze(src)
+    @pytest.mark.parametrize("lang,ext", [("java", ".java"), ("csharp", ".cs")], ids=["java", "csharp"])
+    def test_analyze_empty_file(self, lang, ext, tmp_path):
+        f = tmp_path / f"Empty{ext}"
+        f.write_text("")
+        result = self._cls(lang)().analyze(f)
         assert result["functions"] == []
 
-    def test_analyze_skips_keywords(self, tmp_path):
+    def test_csharp_skips_keywords(self, tmp_path):
+        f = tmp_path / "Checkout.cs"
+        f.write_text(_CS_SAMPLE)
         from src.multi_lang import CSharpASTAnalyzer
-        src = tmp_path / "Checkout.cs"
-        src.write_text(self._SAMPLE_CS)
-        result = CSharpASTAnalyzer().analyze(src)
-        names = [f["name"] for f in result["functions"]]
-        # 'if', 'while', etc. must not appear as methods
+        result = CSharpASTAnalyzer().analyze(f)
+        names = [fn["name"] for fn in result["functions"]]
         for kw in ("if", "while", "for", "foreach", "switch", "using", "catch"):
             assert kw not in names
 

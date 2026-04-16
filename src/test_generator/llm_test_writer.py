@@ -14,10 +14,13 @@ are always included, and the LLM only enriches them.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import List, Optional
 
 from .assertion_gen import AssertionGroup, TestSpec
+
+logger = logging.getLogger(__name__)
 
 
 class LLMTestWriter:
@@ -73,14 +76,19 @@ Return ONLY valid JSON with this schema (no markdown, no explanation):
     def augment(self, spec: TestSpec) -> TestSpec:
         """
         Return a new :class:`TestSpec` with LLM-generated metadata attached.
-        Falls back gracefully if no API key is configured.
+        Falls back gracefully if no API key is configured or the call fails.
         """
         if not self._api_key:
             self._heuristic_names(spec)
             return spec
 
         prompt = self._build_prompt(spec)
-        raw = self._call_llm(prompt)
+        try:
+            raw = self._call_llm(prompt)
+        except Exception as exc:  # network error, SSL, quota, etc.
+            logger.warning("LLM augmentation failed (%s): falling back to heuristic names", exc)
+            self._heuristic_names(spec)
+            return spec
         self._apply_response(raw, spec)
         return spec
 

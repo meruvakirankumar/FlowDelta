@@ -5,6 +5,9 @@
 #
 # DO NOT EDIT — regenerate with:  flowdelta generate --flow {{ spec.flow_id }}
 
+import json
+import pathlib
+
 import pytest
 
 
@@ -12,16 +15,38 @@ import pytest
 # Fixtures
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def app_under_test():
     """
-    Replace this fixture with your own application setup.
-    The fixture should return the object / function under test so that
-    each test can call it and capture its result in `result`.
+    Loads the FlowDelta golden trace for the '{{ spec.flow_id }}' flow and
+    returns a callable that merges all snapshot locals into one state dict.
+
+    Re-record the golden trace with:
+        flowdelta record {{ spec.flow_id }} <your_script.py> --golden
     """
-    raise NotImplementedError(
-        "Implement the 'app_under_test' fixture for flow '{{ spec.flow_id }}'"
-    )
+    _trace_file = pathlib.Path(__file__).parent.parent / ".flowdelta" / "runs" / "traces.jsonl"
+    if not _trace_file.exists():
+        pytest.skip("Golden trace not found — record it first")
+
+    _entry = None
+    for _line in _trace_file.read_text(encoding="utf-8").splitlines():
+        if not _line.strip():
+            continue
+        _d = json.loads(_line)
+        if _d.get("flow_id") == "{{ spec.flow_id }}":
+            _entry = _d
+
+    if _entry is None:
+        pytest.skip("No '{{ spec.flow_id }}' trace found in golden trace file")
+
+    _merged: dict = {}
+    for _snap in _entry.get("snapshots", []):
+        _merged.update(_snap.get("locals", {}))
+
+    def _state():
+        return _merged
+
+    return _state
 
 
 # ---------------------------------------------------------------------------

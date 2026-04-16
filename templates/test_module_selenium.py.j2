@@ -1,0 +1,230 @@
+# FlowDelta generated Selenium test module
+# Flow:    {{ spec.flow_id }}
+# Run ID:  {{ spec.run_id }}
+# Generated: {{ generated_at }}
+#
+# DO NOT EDIT — regenerate with:  flowdelta generate --flow {{ spec.flow_id }} --framework selenium
+#
+# Prerequisites:
+#   pip install selenium pytest pytest-html
+#   Download ChromeDriver matching your Chrome version:
+#   https://chromedriver.chromium.org/downloads
+#   Set BASE_URL to your application's URL before running.
+
+import json
+import pathlib
+import time
+import urllib.request
+import urllib.error
+
+import pytest
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
+    _SELENIUM_AVAILABLE = True
+except ImportError:
+    _SELENIUM_AVAILABLE = False
+
+
+# ---------------------------------------------------------------------------
+# Configuration — edit these for your environment
+# ---------------------------------------------------------------------------
+
+BASE_URL = "http://localhost:3000"          # your app's base URL
+CHROMEDRIVER_PATH = None                    # None = auto-detect from PATH
+IMPLICIT_WAIT = 10                          # seconds
+PAGE_LOAD_TIMEOUT = 30                      # seconds
+HEADLESS = False                            # set True for CI
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def golden_state():
+    """
+    Loads the FlowDelta golden trace for the '{{ spec.flow_id }}' flow and
+    returns a merged dict of all recorded local variables.
+
+    Re-record with:
+        flowdelta record {{ spec.flow_id }} <your_script.py> --golden
+    """
+    _trace_file = pathlib.Path(__file__).parent.parent / ".flowdelta" / "runs" / "traces.jsonl"
+    if not _trace_file.exists():
+        pytest.skip("Golden trace not found — record it first")
+
+    _entry = None
+    for _line in _trace_file.read_text(encoding="utf-8").splitlines():
+        if not _line.strip():
+            continue
+        _d = json.loads(_line)
+        if _d.get("flow_id") == "{{ spec.flow_id }}":
+            _entry = _d
+
+    if _entry is None:
+        pytest.skip("No '{{ spec.flow_id }}' trace found in golden trace file")
+
+    _merged: dict = {}
+    for _snap in _entry.get("snapshots", []):
+        _merged.update(_snap.get("locals", {}))
+
+    return _merged
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _require_selenium():
+    """Skip the entire module if selenium is not installed."""
+    if not _SELENIUM_AVAILABLE:
+        pytest.skip(
+            "selenium not installed — run: pip install selenium",
+            allow_module_level=True,
+        )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _require_app_running():
+    """Skip the entire module if BASE_URL is not reachable."""
+    try:
+        urllib.request.urlopen(BASE_URL, timeout=5)
+    except Exception as exc:
+        pytest.skip(
+            f"Application not reachable at {BASE_URL} ({exc}). "
+            "Start your app and set BASE_URL before running Selenium tests.",
+            allow_module_level=True,
+        )
+
+
+@pytest.fixture(scope="module")
+def driver():
+    """
+    Module-scoped Selenium WebDriver fixture.
+    Yields a Chrome WebDriver and quits it after all tests in the module run.
+    Skips (not fails) if ChromeDriver cannot be launched.
+    """
+    if not _SELENIUM_AVAILABLE:
+        pytest.skip("selenium not installed")
+
+    chrome_options = Options()
+    if HEADLESS:
+        chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--window-size=1280,900")
+
+    try:
+        if CHROMEDRIVER_PATH:
+            svc = Service(CHROMEDRIVER_PATH)
+            _driver = webdriver.Chrome(service=svc, options=chrome_options)
+        else:
+            _driver = webdriver.Chrome(options=chrome_options)
+    except Exception as exc:
+        pytest.skip(
+            f"ChromeDriver could not start ({exc}). "
+            "Install ChromeDriver matching your Chrome version: "
+            "https://chromedriver.chromium.org/downloads"
+        )
+        return
+
+    _driver.implicitly_wait(IMPLICIT_WAIT)
+    _driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
+
+    yield _driver
+
+    _driver.quit()
+
+
+@pytest.fixture
+def wait(driver):
+    """Returns an explicit WebDriverWait bound to the shared driver."""
+    return WebDriverWait(driver, IMPLICIT_WAIT)
+
+
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+def _el(driver, by, selector, timeout=IMPLICIT_WAIT):
+    """Fetch a single element with an explicit wait."""
+    return WebDriverWait(driver, timeout).until(
+        EC.presence_of_element_located((by, selector))
+    )
+
+
+def _text(driver, by, selector, timeout=IMPLICIT_WAIT):
+    """Return .text of a located element (stripped)."""
+    return _el(driver, by, selector, timeout).text.strip()
+
+
+def _val(driver, by, selector, timeout=IMPLICIT_WAIT):
+    """Return the value attribute of a located element (input/select)."""
+    return _el(driver, by, selector, timeout).get_attribute("value") or ""
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+{% for group in spec.groups %}
+class Test{{ group.test_name | default("Transition" ~ loop.index) | replace("_", " ") | title | replace(" ", "") }}:
+    """
+    {{ group.docstring | default("Validates the '" ~ spec.flow_id ~ "' flow: " ~ group.from_location ~ " → " ~ group.to_location ~ ".") }}
+
+    Flow transition:
+        {{ group.from_location }}
+      → {{ group.to_location }}
+    """
+
+    # ------------------------------------------------------------------
+    # TODO: Replace the CSS selectors/XPaths below with the real locators
+    #       from your application's HTML.
+    # ------------------------------------------------------------------
+    {% for assertion in group.assertions %}
+    # Expected (from golden trace): {{ assertion.description }}
+    # Selenium equivalent — fill in the correct locator:
+    #   element_text = _text(driver, By.CSS_SELECTOR, "#your-selector")
+    #   assert element_text == "<expected value>"
+    # Raw state assertion:  {{ assertion.code }}
+    {% endfor %}
+
+    def test_page_loads_{{ group.test_name | default("step_" ~ loop.index) }}(self, driver, golden_state):
+        """Page for '{{ group.to_location }}' step loads without errors."""
+        # TODO: Replace the path below with the real route for this step,
+        #       then remove the pytest.skip() call.
+        #
+        # driver.get(BASE_URL + "/your-path")
+        # assert driver.title != "", "Page title should not be empty"
+        # assert "error" not in driver.title.lower(), "Page should not show an error"
+        pytest.skip("TODO: set the URL path for step '{{ group.to_location }}'" )
+
+    {% for assertion in group.assertions %}
+    def test_{{ group.test_name | default("step_" ~ loop.index) }}_{{ assertion.variable | replace(".", "_") | replace("[", "_") | replace("]", "") | replace("'", "") }}_{{ loop.index }}(self, driver, golden_state):
+        """{{ assertion.description }}"""
+        # Navigate / set up state as needed
+        # driver.get(BASE_URL + "/your-path")
+
+        # TODO: Replace the selector below with the real CSS selector / XPath
+        # that shows the value of '{{ assertion.variable }}' in the UI.
+        #
+        # Example (CSS):   element = _el(driver, By.CSS_SELECTOR, "#{{ assertion.variable | replace('.', '-') | replace('[', '-') | replace(']', '') | replace("'", '') }}")
+        # Example (XPath):  element = _el(driver, By.XPATH, "//div[@data-testid='{{ assertion.variable }}']")
+        #
+        # Expected value from golden trace:
+        #   {{ assertion.code }}
+
+        # ---- BEGIN your implementation ----
+        # actual = _text(driver, By.CSS_SELECTOR, "#TODO")
+        # assert actual == golden_state.get("{{ assertion.variable }}", ""), \
+        #     f"Expected '{{ assertion.variable }}' to match golden trace, got: {actual!r}"
+        # ---- END your implementation ----
+
+        # Placeholder: always passes until you fill in the locator above.
+        pytest.skip("TODO: fill in Selenium locator for '{{ assertion.variable }}'")
+
+    {% endfor %}
+{% endfor %}

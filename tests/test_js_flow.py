@@ -7,10 +7,7 @@ Skips automatically if tree-sitter-javascript is not installed.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 from src.flow_identifier.ast_analyzer import ASTAnalyzer

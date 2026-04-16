@@ -4,31 +4,13 @@ Tests for the delta engine – verifiable without external services.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 from src.state_tracker.dap_client import StateSnapshot
 from src.state_tracker.trace_recorder import FlowTrace
 from src.delta_engine import StateDiffer, TraceDelta
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def make_snapshot(seq: int, locals_: dict, fn: str = "my_func", line: int = 1) -> StateSnapshot:
-    return StateSnapshot(
-        event="call",
-        thread_id=0,
-        file="app.py",
-        line=line,
-        function=fn,
-        locals=locals_,
-        sequence=seq,
-    )
+from helpers import make_snapshot
 
 
 # ---------------------------------------------------------------------------

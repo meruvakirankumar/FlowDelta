@@ -7,11 +7,8 @@ so no external services are needed.
 
 from __future__ import annotations
 
-import sys
 import uuid
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 from src.state_tracker.dap_client import StateSnapshot
@@ -20,16 +17,7 @@ from src.delta_engine.delta_store import DeltaStore
 from src.delta_engine.state_diff import StateDiffer
 from src.delta_engine.sqlite_query import SQLiteQueryAPI
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def make_snap(seq, locals_, fn="fn", line=1):
-    return StateSnapshot(
-        event="call", thread_id=0, file="app.py",
-        line=line, function=fn, locals=locals_, sequence=seq,
-    )
+from helpers import make_snapshot
 
 
 def seed_store(store_path: Path, flow_id: str, runs: list, golden_idx: int = 0) -> list:
@@ -45,8 +33,8 @@ def seed_store(store_path: Path, flow_id: str, runs: list, golden_idx: int = 0) 
 
     for i, (before, after) in enumerate(runs):
         run_id = str(uuid.uuid4())[:8]
-        s1 = make_snap(1, before)
-        s2 = make_snap(2, after)
+        s1 = make_snapshot(1, before)
+        s2 = make_snapshot(2, after)
         trace = FlowTrace(flow_id, run_id, [s1, s2])
         store.save_trace(trace, golden=(i == golden_idx))
         td = differ.diff_trace(trace)
@@ -250,8 +238,8 @@ class TestCompareRuns:
         store = DeltaStore(store_path=str(tmp_path), format="sqlite")
         differ = StateDiffer()
         rid_b = str(uuid.uuid4())[:8]
-        s1 = make_snap(1, {"status": "pending"})
-        s2 = make_snap(2, {"status": "confirmed"})
+        s1 = make_snapshot(1, {"status": "pending"})
+        s2 = make_snapshot(2, {"status": "confirmed"})
         trace_b = FlowTrace("flow-b", rid_b, [s1, s2])
         store.save_trace(trace_b)
         store.save_delta(differ.diff_trace(trace_b), rid_b)

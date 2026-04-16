@@ -4,11 +4,8 @@ Tests for the AST Analyzer.
 
 from __future__ import annotations
 
-import sys
 import textwrap
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 from src.flow_identifier import ASTAnalyzer

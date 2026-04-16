@@ -119,7 +119,12 @@ class TrendChartGenerator:
                 for d in delta_data.get("deltas", []):
                     for c in d.get("changes", []):
                         total += 1
-                        ct = c.get("change_type", "unknown")
+                        # Tests may provide primitive values in ``changes``;
+                        # production data uses dict entries with ``change_type``.
+                        if isinstance(c, dict):
+                            ct = c.get("change_type", "unknown")
+                        else:
+                            ct = "unknown"
                         change_counts[ct] = change_counts.get(ct, 0) + 1
 
             points.append(TrendPoint(
