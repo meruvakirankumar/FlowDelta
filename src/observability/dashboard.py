@@ -488,7 +488,7 @@ _DASHBOARD_HTML = """
     }
 
     /* --- Sidebar ------------------------------------------ */
-    function Sidebar({ flows, selectedFlow, onSelect, storePath, loading }) {
+    function Sidebar({ flows, selectedFlow, onSelect, storePath, loading, activePage, onPageSelect }) {
       return (
         <aside style={{
           width: 260, flexShrink: 0, background: C.sidebar,
@@ -518,6 +518,47 @@ _DASHBOARD_HTML = """
             </div>
           </div>
 
+          {/* Tools nav */}
+          <div style={{ padding: "14px 10px 6px" }}>
+            <div style={{
+              padding: "4px 8px 8px",
+              fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+              letterSpacing: "0.09em", color: C.muted,
+            }}>Tools</div>
+            {[{ id: "probe", label: "URL Analyser", badge: "NEW" }].map(item => {
+              const isActive = activePage === item.id;
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => onPageSelect(item.id)}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "9px 12px 9px " + (isActive ? "9px" : "12px"),
+                    borderRadius: 8, cursor: "pointer", marginBottom: 2,
+                    fontSize: 14,
+                    color:      isActive ? C.primary : C.soft,
+                    background: isActive
+                      ? "linear-gradient(90deg, rgba(108,139,255,.16), rgba(167,139,250,.06))"
+                      : "transparent",
+                    borderLeft: "3px solid " + (isActive ? C.primary : "transparent"),
+                    transition: "all .15s",
+                  }}
+                >
+                  <span>{item.label}</span>
+                  {item.badge && (
+                    <span style={{
+                      background: "rgba(108,139,255,.2)", color: C.primary,
+                      fontSize: 10, padding: "1px 6px", borderRadius: 99, fontWeight: 700,
+                    }}>{item.badge}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: C.border, margin: "0 18px" }} />
+
           {/* Section label */}
           <div style={{
             padding: "14px 18px 8px",
@@ -538,7 +579,7 @@ _DASHBOARD_HTML = """
                 No flows recorded yet. Run the pipeline first.
               </div>
             ) : flows.map(f => {
-              const active = selectedFlow === f.flow_id;
+              const active = activePage !== "probe" && selectedFlow === f.flow_id;
               return (
                 <div key={f.flow_id}
                   onClick={() => onSelect(f.flow_id)}
@@ -1003,7 +1044,7 @@ _DASHBOARD_HTML = """
 
       if (s.error) return <EmptyState symbol="!" title="Could not load run" sub={s.error} />;
 
-      /* Golden baseline run — no delta was computed (nothing to compare against) */
+      /* Golden baseline run - no delta was computed (nothing to compare against) */
       if (s.data.note === "no_delta") return (
         <div className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 22 }}>
           <div style={{
@@ -1198,6 +1239,13 @@ _DASHBOARD_HTML = """
         setNav(prev => ({ ...prev, view: "flow", runId: null }));
       }, []);
 
+      const onPageSelect = useCallback(pageId => {
+        setNav(prev => ({ ...prev, view: pageId, runId: null }));
+      }, []);
+
+      /* activePage for sidebar highlight */
+      const activePage = nav.view === "probe" ? "probe" : null;
+
       return (
         <div style={{
           display: "flex", minHeight: "100vh",
@@ -1209,9 +1257,12 @@ _DASHBOARD_HTML = """
             onSelect={onSelectFlow}
             storePath={storePath}
             loading={sideLoad}
+            activePage={activePage}
+            onPageSelect={onPageSelect}
           />
           <main style={{ flex: 1, overflowY: "auto", height: "100vh", padding: "30px 34px" }}>
             {nav.view === "welcome" && <WelcomeScreen />}
+            {nav.view === "probe"   && <ProbeView />}
             {nav.view === "flow" && nav.flowId && (
               <FlowView key={nav.flowId} flowId={nav.flowId} onSelectRun={onSelectRun} />
             )}
@@ -1228,11 +1279,573 @@ _DASHBOARD_HTML = """
       );
     }
 
+    /* =============================================================
+       PROBE VIEW - analyse any URL
+       ============================================================= */
+    const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+
+    const STATUS_COLOR = code => {
+      if (!code) return C.muted;
+      if (code < 300) return C.success;
+      if (code < 400) return C.warn;
+      if (code < 500) return C.danger;
+      return "#ff6b9d";
+    };
+
+    function StatusBadge({ code }) {
+      if (!code) return null;
+      const color = STATUS_COLOR(code);
+      const label = code < 200 ? "info" : code < 300 ? "ok" : code < 400 ? "redirect" : code < 500 ? "client err" : "server err";
+      return (
+        <span style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "4px 12px", borderRadius: 99,
+          fontSize: 13, fontWeight: 700,
+          color, background: color + "22", border: "1px solid " + color + "55",
+        }}>
+          <span style={{ fontFamily: "monospace", fontSize: 16 }}>{code}</span>
+          <span style={{ fontWeight: 500, fontSize: 11 }}>{label}</span>
+        </span>
+      );
+    }
+
+    function SecHeaderRow({ name, info }) {
+      return (
+        <tr>
+          <td style={{ padding: "8px 14px", fontFamily: "monospace", fontSize: 12, color: C.soft, borderBottom: "1px solid " + C.border }}>{name}</td>
+          <td style={{ padding: "8px 14px", borderBottom: "1px solid " + C.border }}>
+            {info.present
+              ? <span style={{ color: C.success, fontSize: 12, fontWeight: 600 }}>present</span>
+              : <span style={{ color: C.danger,  fontSize: 12, fontWeight: 600 }}>missing</span>}
+          </td>
+          <td style={{ padding: "8px 14px", fontFamily: "monospace", fontSize: 11, color: C.muted, borderBottom: "1px solid " + C.border, maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {info.value || "--"}
+          </td>
+        </tr>
+      );
+    }
+
+    function JsonViewer({ data, depth = 0 }) {
+      const [collapsed, setCollapsed] = useState(depth > 1);
+      if (data === null)      return <span style={{ color: C.muted }}>null</span>;
+      if (data === undefined) return <span style={{ color: C.muted }}>undefined</span>;
+      if (typeof data === "boolean") return <span style={{ color: C.accent }}>{String(data)}</span>;
+      if (typeof data === "number")  return <span style={{ color: C.warn }}>{data}</span>;
+      if (typeof data === "string")  return <span style={{ color: C.success }}>"{data.length > 120 ? data.slice(0, 120) + "..." : data}"</span>;
+      if (Array.isArray(data)) {
+        if (data.length === 0) return <span style={{ color: C.muted }}>[]</span>;
+        return (
+          <span>
+            <span style={{ color: C.primary, cursor: "pointer", userSelect: "none" }} onClick={() => setCollapsed(c => !c)}>
+              {collapsed ? "[+" + data.length + "]" : "["}
+            </span>
+            {!collapsed && (
+              <div style={{ paddingLeft: 18, borderLeft: "1px solid " + C.border }}>
+                {data.slice(0, 50).map((v, i) => (
+                  <div key={i} style={{ lineHeight: 1.8 }}>
+                    <span style={{ color: C.muted, fontSize: 11 }}>{i}: </span>
+                    <JsonViewer data={v} depth={depth + 1} />
+                    {i < data.length - 1 && <span style={{ color: C.muted }}>,</span>}
+                  </div>
+                ))}
+                {data.length > 50 && <div style={{ color: C.muted, fontSize: 11 }}>... {data.length - 50} more</div>}
+              </div>
+            )}
+            {!collapsed && <span style={{ color: C.primary }}>]</span>}
+          </span>
+        );
+      }
+      if (typeof data === "object") {
+        const keys = Object.keys(data);
+        if (keys.length === 0) return <span style={{ color: C.muted }}>{"{}"}</span>;
+        return (
+          <span>
+            <span style={{ color: C.primary, cursor: "pointer", userSelect: "none" }} onClick={() => setCollapsed(c => !c)}>
+              {collapsed ? "{+" + keys.length + "}" : "{"}
+            </span>
+            {!collapsed && (
+              <div style={{ paddingLeft: 18, borderLeft: "1px solid " + C.border }}>
+                {keys.slice(0, 80).map((k, i) => (
+                  <div key={k} style={{ lineHeight: 1.8 }}>
+                    <span style={{ color: C.accent }}>"{k}"</span>
+                    <span style={{ color: C.muted }}>: </span>
+                    <JsonViewer data={data[k]} depth={depth + 1} />
+                    {i < keys.length - 1 && <span style={{ color: C.muted }}>,</span>}
+                  </div>
+                ))}
+                {keys.length > 80 && <div style={{ color: C.muted, fontSize: 11 }}>... {keys.length - 80} more keys</div>}
+              </div>
+            )}
+            {!collapsed && <span style={{ color: C.primary }}>{"}"}</span>}
+          </span>
+        );
+      }
+      return <span style={{ color: C.muted }}>{String(data)}</span>;
+    }
+
+    function ProbeView() {
+      const [url, setUrl]         = useState("https://");
+      const [method, setMethod]   = useState("GET");
+      const [headersRaw, setHeadersRaw] = useState("");
+      const [bodyRaw, setBodyRaw] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [result, setResult]   = useState(null);
+      const [history, setHistory] = useState([]);
+      const [activeTab, setActiveTab] = useState("response");
+      const [showAdvanced, setShowAdvanced] = useState(false);
+
+      // load probe history on mount
+      useEffect(() => {
+        apiFetch("/api/probe/history").then(d => setHistory(d.probes || [])).catch(() => {});
+      }, []);
+
+      const run = async () => {
+        if (!url || url === "https://") return;
+        setLoading(true);
+        setResult(null);
+        try {
+          let extraHeaders = {};
+          if (headersRaw.trim()) {
+            headersRaw.trim().split("\\n").forEach(line => {
+              const idx = line.indexOf(":");
+              if (idx > 0) extraHeaders[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+            });
+          }
+          const r = await fetch("/api/probe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, method, headers: extraHeaders, body: bodyRaw || null }),
+          });
+          const d = await r.json();
+          setResult(d);
+          setActiveTab("response");
+          // refresh history
+          apiFetch("/api/probe/history").then(h => setHistory(h.probes || [])).catch(() => {});
+        } catch (e) {
+          setResult({ ok: false, error: e.message, url });
+        }
+        setLoading(false);
+      };
+
+      const onKey = e => e.key === "Enter" && !loading && run();
+
+      return (
+        <div className="fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {/* Header */}
+          <div style={{ paddingBottom: 18, borderBottom: "1px solid " + C.border }}>
+            <div style={{ fontSize: 23, fontWeight: 800 }}>URL Analyser</div>
+            <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
+              Probe any URL - inspect response, headers, JSON structure, security posture, and delta changes.
+            </div>
+          </div>
+
+          {/* Input bar */}
+          <div style={{
+            background: C.surface, border: "1px solid " + C.border,
+            borderRadius: 14, padding: "18px 20px",
+            display: "flex", flexDirection: "column", gap: 14,
+          }}>
+            {/* Method + URL row */}
+            <div style={{ display: "flex", gap: 10 }}>
+              <select
+                value={method}
+                onChange={e => setMethod(e.target.value)}
+                style={{
+                  background: C.s2, border: "1px solid " + C.border, color: C.primary,
+                  borderRadius: 9, padding: "10px 14px", fontSize: 13, fontWeight: 700,
+                  fontFamily: "monospace", cursor: "pointer", flexShrink: 0,
+                }}
+              >
+                {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <input
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                onBlur={e => {
+                  const v = e.target.value.trim();
+                  if (v && !v.startsWith("http://") && !v.startsWith("https://")) {
+                    setUrl("https://" + v);
+                  }
+                }}
+                onKeyDown={onKey}
+                placeholder="amazon.in or https://api.example.com/endpoint"
+                style={{
+                  flex: 1, background: C.s2, border: "1px solid " + C.border,
+                  color: C.text, borderRadius: 9, padding: "10px 16px",
+                  fontSize: 14, fontFamily: "monospace", outline: "none",
+                }}
+              />
+              <button
+                onClick={run}
+                disabled={loading}
+                style={{
+                  background: loading ? C.muted : "linear-gradient(135deg, #6c8bff, #a78bfa)",
+                  border: "none", color: "#fff", fontWeight: 700,
+                  borderRadius: 9, padding: "10px 24px", fontSize: 14,
+                  cursor: loading ? "not-allowed" : "pointer", flexShrink: 0,
+                  transition: "opacity .15s",
+                  opacity: loading ? 0.7 : 1,
+                }}
+              >
+                {loading ? "Probing..." : "Analyze"}
+              </button>
+            </div>
+
+            {/* Advanced toggle */}
+            <button
+              onClick={() => setShowAdvanced(a => !a)}
+              style={{
+                background: "none", border: "none", color: C.muted,
+                fontSize: 12, cursor: "pointer", textAlign: "left", padding: 0,
+              }}
+            >
+              {showAdvanced ? "- Hide" : "+ Show"} custom headers / request body
+            </button>
+            {showAdvanced && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 11, color: C.muted, fontWeight: 600, textTransform: "uppercase" }}>
+                    Extra Headers (one per line, Key: Value)
+                  </label>
+                  <textarea
+                    value={headersRaw}
+                    onChange={e => setHeadersRaw(e.target.value)}
+                    placeholder={"Authorization: Bearer token\\nX-Custom: value"}
+                    rows={4}
+                    style={{
+                      background: C.s2, border: "1px solid " + C.border, color: C.text,
+                      borderRadius: 8, padding: "10px 12px", fontSize: 12,
+                      fontFamily: "monospace", resize: "vertical", outline: "none",
+                    }}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 11, color: C.muted, fontWeight: 600, textTransform: "uppercase" }}>
+                    Request Body (for POST/PUT/PATCH)
+                  </label>
+                  <textarea
+                    value={bodyRaw}
+                    onChange={e => setBodyRaw(e.target.value)}
+                    placeholder={'{"key": "value"}'}
+                    rows={4}
+                    style={{
+                      background: C.s2, border: "1px solid " + C.border, color: C.text,
+                      borderRadius: 8, padding: "10px 12px", fontSize: 12,
+                      fontFamily: "monospace", resize: "vertical", outline: "none",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Recent probes */}
+          {history.length > 0 && !result && (
+            <Panel title="Recent Probes" badge2="HISTORY">
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {history.map(h => (
+                  <div key={h.url} style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    background: C.s2, borderRadius: 8, padding: "8px 14px", cursor: "pointer",
+                  }} onClick={() => setUrl(h.url)}>
+                    <span style={{ fontFamily: "monospace", fontSize: 13, color: C.primary }}>{h.url}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <StatusBadge code={h.status} />
+                      <span style={{ fontSize: 11, color: C.muted }}>{h.elapsed_ms}ms</span>
+                      <span style={{ fontSize: 11, color: C.muted }}>{fmt(h.probed_at)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          )}
+
+          {/* Loading skeleton */}
+          {loading && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+                {[...Array(4)].map((_, i) => <Skel key={i} h={90} r={12} />)}
+              </div>
+              <Skel h={300} r={12} />
+              <Skel h={220} r={12} />
+            </div>
+          )}
+
+          {/* Error */}
+          {result && !result.ok && (
+            <div style={{
+              background: "rgba(248,113,113,.08)", border: "1px solid rgba(248,113,113,.3)",
+              borderRadius: 12, padding: "20px 24px",
+            }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.danger, marginBottom: 6 }}>
+                Request Failed
+                {result.error_type && (
+                  <span style={{
+                    marginLeft: 10, fontSize: 12, fontWeight: 600,
+                    background: "rgba(248,113,113,.2)", padding: "2px 8px", borderRadius: 6,
+                    fontFamily: "monospace",
+                  }}>{result.error_type}</span>
+                )}
+              </div>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 8 }}>
+                <strong style={{ color: C.soft }}>URL: </strong>
+                <span style={{ fontFamily: "monospace" }}>{result.url}</span>
+              </div>
+              <pre style={{ fontFamily: "monospace", fontSize: 13, color: C.soft, whiteSpace: "pre-wrap",
+                background: "rgba(0,0,0,.3)", borderRadius: 8, padding: "12px 14px" }}>
+                {result.error || "Connection failed. The server may have refused the connection, be unreachable, or blocking automated requests."}
+              </pre>
+              <div style={{ marginTop: 12, fontSize: 12, color: C.muted, lineHeight: 1.7 }}>
+                <strong>Common causes:</strong> connection refused, DNS failure, SSL error, server is blocking scrapers, or no network path to this host.
+              </div>
+            </div>
+          )}
+
+          {/* Results */}
+          {result && result.ok && (() => {
+            const secPresent = Object.values(result.security_headers || {}).filter(h => h.present).length;
+            const secTotal   = Object.keys(result.security_headers || {}).length;
+            const secScore   = secTotal > 0 ? Math.round((secPresent / secTotal) * 100) : 0;
+            const secColor   = secScore >= 70 ? C.success : secScore >= 40 ? C.warn : C.danger;
+            const hasDelta   = result.delta_from_prev && (
+              result.delta_from_prev.added.length +
+              result.delta_from_prev.removed.length +
+              result.delta_from_prev.changed.length > 0
+            );
+            const TABS = [
+              { k: "response", label: "Response" },
+              { k: "headers",  label: "Headers (" + Object.keys(result.headers || {}).length + ")" },
+              { k: "security", label: "Security (" + secPresent + "/" + secTotal + ")" },
+              ...(result.is_json ? [{ k: "json", label: "JSON Explorer" }] : []),
+              ...(hasDelta ? [{ k: "delta", label: "Delta [!]" }] : []),
+            ];
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                {/* Summary cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 12 }}>
+                  <div style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: 12, padding: "16px 18px" }}>
+                    <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>Status</div>
+                    <StatusBadge code={result.status} />
+                  </div>
+                  <div style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: 12, padding: "16px 18px" }}>
+                    <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Response Time</div>
+                    <div style={{ fontSize: 26, fontWeight: 800, color: result.elapsed_ms < 200 ? C.success : result.elapsed_ms < 800 ? C.warn : C.danger }}>
+                      {result.elapsed_ms}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.muted }}>ms</div>
+                  </div>
+                  <div style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: 12, padding: "16px 18px" }}>
+                    <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Size</div>
+                    <div style={{ fontSize: 26, fontWeight: 800, color: C.primary }}>
+                      {result.content_length > 1024 ? (result.content_length / 1024).toFixed(1) + "K" : result.content_length}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.muted }}>{result.content_length > 1024 ? "KB" : "bytes"}</div>
+                  </div>
+                  <div style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: 12, padding: "16px 18px" }}>
+                    <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Security</div>
+                    <div style={{ fontSize: 26, fontWeight: 800, color: secColor }}>{secScore}%</div>
+                    <div style={{ fontSize: 11, color: C.muted }}>{secPresent}/{secTotal} headers</div>
+                  </div>
+                  {result.redirect_count > 0 && (
+                    <div style={{ background: C.surface, border: "1px solid " + C.border, borderRadius: 12, padding: "16px 18px" }}>
+                      <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Redirects</div>
+                      <div style={{ fontSize: 26, fontWeight: 800, color: C.warn }}>{result.redirect_count}</div>
+                      <div style={{ fontSize: 11, color: C.muted, wordBreak: "break-all" }}>{result.final_url !== result.url ? "-> " + result.final_url.slice(0, 30) : "same"}</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tab bar */}
+                <div style={{ display: "flex", gap: 4, borderBottom: "1px solid " + C.border, paddingBottom: 0 }}>
+                  {TABS.map(t => (
+                    <button
+                      key={t.k}
+                      onClick={() => setActiveTab(t.k)}
+                      style={{
+                        background: activeTab === t.k ? C.surface : "transparent",
+                        border: "1px solid " + (activeTab === t.k ? C.border : "transparent"),
+                        borderBottom: activeTab === t.k ? "1px solid " + C.surface : "1px solid transparent",
+                        color: activeTab === t.k ? C.text : C.muted,
+                        padding: "8px 16px", borderRadius: "8px 8px 0 0",
+                        cursor: "pointer", fontSize: 13, fontWeight: activeTab === t.k ? 600 : 400,
+                        marginBottom: -1,
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tab content */}
+                <div>
+                  {/* Response tab */}
+                  {activeTab === "response" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", fontWeight: 700 }}>Content-Type</div>
+                        <code style={{ fontSize: 13, color: C.accent }}>{result.content_type || "not specified"}</code>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", fontWeight: 700 }}>Probed At</div>
+                        <span style={{ fontSize: 13, color: C.soft }}>{fmt(result.probed_at)}</span>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>
+                          Response Body Preview
+                        </div>
+                        <pre style={{
+                          background: "#09090f", border: "1px solid " + C.border,
+                          borderRadius: 10, padding: "14px 16px",
+                          fontSize: 12, fontFamily: "JetBrains Mono, monospace",
+                          color: C.soft, whiteSpace: "pre-wrap", wordBreak: "break-all",
+                          maxHeight: 340, overflowY: "auto",
+                        }}>
+                          {result.body_preview || "(empty body)"}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Headers tab */}
+                  {activeTab === "headers" && (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr>
+                            <TH>Header</TH>
+                            <TH>Value</TH>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(result.headers || {}).map(([k, v], i) => {
+                            const last = i === Object.keys(result.headers).length - 1;
+                            return (
+                              <tr key={k}
+                                onMouseEnter={e => e.currentTarget.style.background = "rgba(108,139,255,.04)"}
+                                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                              >
+                                <TD mono last={last} style={{ color: C.accent, whiteSpace: "nowrap" }}>{k}</TD>
+                                <TD mono last={last} style={{ color: C.soft, wordBreak: "break-all", maxWidth: 420 }}>{v}</TD>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Security tab */}
+                  {activeTab === "security" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: 16,
+                        background: C.surface, border: "1px solid " + secColor + "44",
+                        borderRadius: 12, padding: "16px 20px",
+                      }}>
+                        <div style={{ fontSize: 36, fontWeight: 800, color: secColor }}>{secScore}%</div>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
+                            {secScore >= 70 ? "Good security posture" : secScore >= 40 ? "Partially secured" : "Weak security headers"}
+                          </div>
+                          <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
+                            {secPresent} of {secTotal} recommended security headers present
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr><TH>Header</TH><TH>Status</TH><TH>Value</TH></tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(result.security_headers || {}).map(([name, info]) => (
+                              <SecHeaderRow key={name} name={name} info={info} />
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* JSON explorer tab */}
+                  {activeTab === "json" && result.parsed_json !== null && (
+                    <div style={{
+                      background: "#09090f", border: "1px solid " + C.border,
+                      borderRadius: 10, padding: "16px 20px",
+                      fontFamily: "JetBrains Mono, monospace", fontSize: 13, lineHeight: 1.9,
+                      maxHeight: 520, overflowY: "auto",
+                    }}>
+                      <JsonViewer data={result.parsed_json} depth={0} />
+                    </div>
+                  )}
+
+                  {/* Delta tab */}
+                  {activeTab === "delta" && result.delta_from_prev && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                      <div style={{
+                        fontSize: 13, color: C.muted, lineHeight: 1.7,
+                        background: C.surface, border: "1px solid " + C.border,
+                        borderRadius: 10, padding: "12px 16px",
+                      }}>
+                        Compared to probe at <strong style={{ color: C.soft }}>{fmt(result.prev_probed_at)}</strong>
+                      </div>
+                      {[
+                        { type: "added",        items: result.delta_from_prev.added },
+                        { type: "removed",      items: result.delta_from_prev.removed },
+                        { type: "changed",      items: result.delta_from_prev.changed },
+                        { type: "type_changed", items: result.delta_from_prev.type_changed },
+                      ].map(({ type, items }) => items.length > 0 && (
+                        <Panel key={type} title={type.replace("_", " ") + " (" + items.length + ")"} badge2={type.toUpperCase().slice(0,3)}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {items.map((path, i) => (
+                              <div key={i} style={{
+                                fontFamily: "monospace", fontSize: 12, color: BADGE_CFG[type]?.color || C.soft,
+                                background: (BADGE_CFG[type]?.bg || "rgba(100,100,100,.1)"),
+                                padding: "6px 12px", borderRadius: 6,
+                              }}>
+                                {path}
+                              </div>
+                            ))}
+                          </div>
+                        </Panel>
+                      ))}
+                      {!hasDelta && (
+                        <div style={{ color: C.muted, fontSize: 13 }}>No changes detected since last probe.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      );
+    }
+
     ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
 </body>
 </html>
 """
+
+
+# ---------------------------------------------------------------------------
+# Probe request schema (module-level so FastAPI can properly inspect it)
+# ---------------------------------------------------------------------------
+
+try:
+    from pydantic import BaseModel as _PydanticBase
+    from typing import Optional as _Opt
+
+    class _ProbeRequest(_PydanticBase):
+        url: str
+        method: str = "GET"
+        headers: dict = {}
+        body: _Opt[str] = None
+except Exception:
+    _ProbeRequest = None  # type: ignore
+
+
 
 
 
@@ -1258,6 +1871,7 @@ class DeltaDashboard:
         self.title = title
         self._trend_gen = TrendChartGenerator(store)
         self._app = None
+        self._probe_cache: dict = {}  # url -> last probe result
 
     # ------------------------------------------------------------------
     # Public API
@@ -1291,6 +1905,7 @@ class DeltaDashboard:
 
     def _build_app(self):
         try:
+            import fastapi
             from fastapi import FastAPI
             from fastapi.responses import HTMLResponse, JSONResponse
         except ImportError as exc:
@@ -1302,6 +1917,7 @@ class DeltaDashboard:
 
         store = self.store
         trend_gen = self._trend_gen
+        probe_cache = self._probe_cache
 
         # ---- UI ----
         @app.get("/", response_class=HTMLResponse)
@@ -1365,8 +1981,7 @@ class DeltaDashboard:
         async def run_trace(run_id: str):
             data = store.load_trace(run_id)
             if data is None:
-                from fastapi import HTTPException
-                raise HTTPException(status_code=404, detail=f"No trace for run {run_id!r}")
+                raise fastapi.HTTPException(status_code=404, detail=f"No trace for run {run_id!r}")
             # Strip large locals to keep response lightweight
             snapshots = []
             for s in data.get("snapshots", []):
@@ -1383,5 +1998,151 @@ class DeltaDashboard:
         @app.get("/api/health")
         async def health():
             return {"status": "ok", "store": str(store.store_path)}
+
+        # ---- Probe endpoint ----
+        @app.post("/api/probe")
+        async def probe_url(
+            url:     str  = fastapi.Body(...),
+            method:  str  = fastapi.Body("GET"),
+            headers: dict = fastapi.Body({}),
+            body:    str  = fastapi.Body(None),
+        ):
+            import time
+            try:
+                import httpx
+            except ImportError:
+                raise fastapi.HTTPException(status_code=500, detail="httpx not installed: pip install httpx")
+
+            url = (url or "").strip()
+            method = (method or "GET").upper()
+            extra_headers = headers or {}
+            req_body = body
+
+            if not url:
+                raise fastapi.HTTPException(status_code=422, detail="url is required")
+
+            # Auto-prepend https:// if no scheme given (e.g. "amazon.in" or "www.example.com")
+            if not url.startswith(("http://", "https://")):
+                url = "https://" + url
+
+            BROWSER_UA = (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            )
+
+            # ---- make the request ----
+            start = time.perf_counter()
+            last_exc = None
+            resp = None
+            # Try with browser UA first; if ConnectError on HTTPS try HTTP fallback
+            for attempt_url in [url, url.replace("https://", "http://", 1) if url.startswith("https://") else None]:
+                if attempt_url is None:
+                    continue
+                try:
+                    async with httpx.AsyncClient(
+                        follow_redirects=True, timeout=20, verify=False,
+                    ) as client:
+                        resp = await client.request(
+                            method, attempt_url,
+                            headers={**extra_headers, "User-Agent": BROWSER_UA,
+                                     "Accept": "text/html,application/xhtml+xml,application/json,*/*;q=0.8",
+                                     "Accept-Language": "en-US,en;q=0.9"},
+                            content=req_body.encode() if req_body else None,
+                        )
+                    elapsed_ms = round((time.perf_counter() - start) * 1000)
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    continue
+
+            if last_exc is not None or resp is None:
+                exc = last_exc
+                exc_type = type(exc).__name__ if exc else "Unknown"
+                exc_msg  = str(exc).strip() if exc else "No response"
+                return {
+                    "ok": False, "url": url,
+                    "error": f"{exc_type}: {exc_msg}" if exc_msg else exc_type,
+                    "error_type": exc_type,
+                }
+
+            content_type = resp.headers.get("content-type", "")
+            body_bytes = resp.content
+            try:
+                body_text = resp.text[:10000] if body_bytes else "(empty response body)"
+            except Exception:
+                body_text = f"(binary content, {len(body_bytes)} bytes)"
+
+            # ---- parse JSON ----
+            parsed_json = None
+            if "json" in content_type:
+                try:
+                    parsed_json = resp.json()
+                except Exception:
+                    pass
+
+            # ---- security header audit ----
+            SEC = [
+                "strict-transport-security",
+                "content-security-policy",
+                "x-frame-options",
+                "x-content-type-options",
+                "x-xss-protection",
+                "referrer-policy",
+                "permissions-policy",
+                "cross-origin-opener-policy",
+                "cross-origin-resource-policy",
+            ]
+            security_headers = {
+                h: {"present": h in resp.headers, "value": resp.headers.get(h, "")}
+                for h in SEC
+            }
+
+            # ---- delta vs previous probe ----
+            prev = probe_cache.get(url)
+            delta = None
+            if prev and prev.get("ok") and parsed_json is not None and prev.get("parsed_json") is not None:
+                try:
+                    from deepdiff import DeepDiff
+                    diff = DeepDiff(prev["parsed_json"], parsed_json, ignore_order=True)
+                    delta = {
+                        "added":   [str(k) for k in diff.get("dictionary_item_added", {})],
+                        "removed": [str(k) for k in diff.get("dictionary_item_removed", {})],
+                        "changed": [str(k) for k in diff.get("values_changed", {})],
+                        "type_changed": [str(k) for k in diff.get("type_changes", {})],
+                    }
+                except Exception:
+                    pass
+
+            result = {
+                "ok": True,
+                "url": url,
+                "final_url": str(resp.url),
+                "method": method,
+                "status": resp.status_code,
+                "elapsed_ms": elapsed_ms,
+                "redirect_count": len(resp.history),
+                "content_type": content_type,
+                "content_length": len(body_bytes),
+                "headers": dict(resp.headers),
+                "security_headers": security_headers,
+                "body_preview": body_text,
+                "parsed_json": parsed_json,
+                "is_json": parsed_json is not None,
+                "delta_from_prev": delta,
+                "prev_probed_at": prev.get("probed_at") if prev else None,
+                "probed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            probe_cache[url] = result
+            return result
+
+        @app.get("/api/probe/history")
+        async def probe_history():
+            return {"probes": [
+                {"url": url, "status": r.get("status"), "elapsed_ms": r.get("elapsed_ms"),
+                 "probed_at": r.get("probed_at"), "ok": r.get("ok")}
+                for url, r in probe_cache.items()
+            ]}
 
         return app
