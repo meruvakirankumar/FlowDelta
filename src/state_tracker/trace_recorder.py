@@ -64,6 +64,29 @@ class FlowTrace:
             "error": self.error,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict, run_id: str | None = None) -> "FlowTrace":
+        """Reconstruct a FlowTrace from a stored dict."""
+        from .dap_client import StateSnapshot  # avoid circular at module level
+        snapshots = [
+            StateSnapshot(
+                event=s["event"],
+                thread_id=s["thread_id"],
+                file=s["file"],
+                line=s["line"],
+                function=s["function"],
+                locals=s["locals"],
+                sequence=s["sequence"],
+            )
+            for s in data.get("snapshots", [])
+        ]
+        return cls(
+            flow_id=data["flow_id"],
+            run_id=run_id or data.get("run_id", ""),
+            snapshots=snapshots,
+            error=data.get("error"),
+        )
+
 
 # ---------------------------------------------------------------------------
 # sys.settrace recorder

@@ -138,6 +138,36 @@ class TraceDelta:
             "deltas": [d.to_dict() for d in self.deltas],
         }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "TraceDelta":
+        """Reconstruct a TraceDelta from a stored dict."""
+        sd_list = []
+        for d in data.get("deltas", []):
+            changes = [
+                VariableDelta(
+                    name=c["name"],
+                    change_type=c["change_type"],
+                    old_value=c.get("old_value"),
+                    new_value=c.get("new_value"),
+                    old_type=c.get("old_type"),
+                    new_type=c.get("new_type"),
+                    deep_path=c.get("deep_path", ""),
+                )
+                for c in d.get("changes", [])
+            ]
+            sd_list.append(SnapshotDelta(
+                from_seq=d["from_seq"],
+                to_seq=d["to_seq"],
+                from_location=d["from_location"],
+                to_location=d["to_location"],
+                changes=changes,
+            ))
+        return cls(
+            flow_id=data.get("flow_id", ""),
+            run_id=data.get("run_id", ""),
+            deltas=sd_list,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Differ

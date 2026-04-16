@@ -107,24 +107,14 @@ Return ONLY valid JSON with this schema (no markdown, no explanation):
     # ------------------------------------------------------------------
 
     def _call_llm(self, prompt: str) -> str:
-        try:
-            from openai import OpenAI
-        except ImportError as exc:
-            raise ImportError("Install openai: pip install openai>=1.0.0") from exc
-
-        kwargs = {"api_key": self._api_key}
-        if self._base_url:
-            kwargs["base_url"] = self._base_url
-        client = OpenAI(**kwargs)
-        resp = client.chat.completions.create(
+        from ..llm_utils import call_llm
+        return call_llm(
+            system_prompt=self._SYSTEM_PROMPT,
+            user_content=prompt,
             model=self.model,
-            temperature=0.2,
-            messages=[
-                {"role": "system", "content": self._SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
+            api_key=self._api_key,
+            base_url=self._base_url,
         )
-        return resp.choices[0].message.content or ""
 
     # ------------------------------------------------------------------
     # Response application

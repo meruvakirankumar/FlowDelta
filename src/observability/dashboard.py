@@ -1,15 +1,15 @@
 ﻿"""
-Web Dashboard â€“ Sprint 4 of FlowDelta.
+Web Dashboard -- Sprint 4 of FlowDelta.
 
 A lightweight FastAPI web application that serves an interactive
 delta visualisation dashboard. Features:
 
-* **Flow list** â€” all recorded flows with run counts
-* **Trace viewer** â€” snapshot-by-snapshot state changes for any run
-* **Delta diff view** â€” side-by-side variable changes with colour coding
-* **Trend chart** â€” Chart.js line chart of change volume over time
-* **Invariant panel** â€” list of detected invariants for a flow
-* **REST API** â€” JSON endpoints for all data (consumable by external tools)
+* **Flow list** -- all recorded flows with run counts
+* **Trace viewer** -- snapshot-by-snapshot state changes for any run
+* **Delta diff view** -- side-by-side variable changes with colour coding
+* **Trend chart** -- Chart.js line chart of change volume over time
+* **Invariant panel** -- list of detected invariants for a flow
+* **REST API** -- JSON endpoints for all data (consumable by external tools)
 
 The dashboard runs entirely in-process (no database server needed) and
 reads directly from the :class:`DeltaStore`.
@@ -22,7 +22,7 @@ Usage::
     store = DeltaStore(store_path=".flowdelta/runs")
     dashboard = DeltaDashboard(store)
     dashboard.run(host="127.0.0.1", port=8765)
-    # â†’ open http://localhost:8765
+    # -> open http://localhost:8765
 
 Or from the CLI::
 
@@ -1829,28 +1829,6 @@ _DASHBOARD_HTML = """
 """
 
 
-# ---------------------------------------------------------------------------
-# Probe request schema (module-level so FastAPI can properly inspect it)
-# ---------------------------------------------------------------------------
-
-try:
-    from pydantic import BaseModel as _PydanticBase
-    from typing import Optional as _Opt
-
-    class _ProbeRequest(_PydanticBase):
-        url: str
-        method: str = "GET"
-        headers: dict = {}
-        body: _Opt[str] = None
-except Exception:
-    _ProbeRequest = None  # type: ignore
-
-
-
-
-
-
-
 # Dashboard server
 # ---------------------------------------------------------------------------
 
@@ -1896,7 +1874,7 @@ class DeltaDashboard:
             ) from exc
 
         app = self.get_app()
-        logger.info("FlowDelta Dashboard â†’ http://%s:%d", host, port)
+        logger.info("FlowDelta Dashboard -> http://%s:%d", host, port)
         uvicorn.run(app, host=host, port=port, log_level="warning")
 
     # ------------------------------------------------------------------
@@ -1905,8 +1883,7 @@ class DeltaDashboard:
 
     def _build_app(self):
         try:
-            import fastapi
-            from fastapi import FastAPI
+            from fastapi import FastAPI, HTTPException, Body
             from fastapi.responses import HTMLResponse, JSONResponse
         except ImportError as exc:
             raise ImportError(
@@ -1973,7 +1950,6 @@ class DeltaDashboard:
                         "saved_at": trace.get("saved_at"),
                         "note": "no_delta",
                     }
-                from fastapi import HTTPException
                 raise HTTPException(status_code=404, detail=f"No run found with id {run_id!r}")
             return data
 
@@ -1981,7 +1957,7 @@ class DeltaDashboard:
         async def run_trace(run_id: str):
             data = store.load_trace(run_id)
             if data is None:
-                raise fastapi.HTTPException(status_code=404, detail=f"No trace for run {run_id!r}")
+                raise HTTPException(status_code=404, detail=f"No trace for run {run_id!r}")
             # Strip large locals to keep response lightweight
             snapshots = []
             for s in data.get("snapshots", []):
@@ -2002,16 +1978,16 @@ class DeltaDashboard:
         # ---- Probe endpoint ----
         @app.post("/api/probe")
         async def probe_url(
-            url:     str  = fastapi.Body(...),
-            method:  str  = fastapi.Body("GET"),
-            headers: dict = fastapi.Body({}),
-            body:    str  = fastapi.Body(None),
+            url:     str  = Body(...),
+            method:  str  = Body("GET"),
+            headers: dict = Body({}),
+            body:    str  = Body(None),
         ):
             import time
             try:
                 import httpx
             except ImportError:
-                raise fastapi.HTTPException(status_code=500, detail="httpx not installed: pip install httpx")
+                raise HTTPException(status_code=500, detail="httpx not installed: pip install httpx")
 
             url = (url or "").strip()
             method = (method or "GET").upper()
@@ -2019,7 +1995,7 @@ class DeltaDashboard:
             req_body = body
 
             if not url:
-                raise fastapi.HTTPException(status_code=422, detail="url is required")
+                raise HTTPException(status_code=422, detail="url is required")
 
             # Auto-prepend https:// if no scheme given (e.g. "amazon.in" or "www.example.com")
             if not url.startswith(("http://", "https://")):

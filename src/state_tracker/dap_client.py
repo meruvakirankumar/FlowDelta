@@ -24,6 +24,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional
 
+from ._framed_transport import FramedTransport
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,7 +78,7 @@ class StateSnapshot:
 # Low-level DAP transport
 # ---------------------------------------------------------------------------
 
-class _DAPTransport:
+class _DAPTransport(FramedTransport):
     """Handles raw DAP message framing over a TCP socket."""
 
     def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -84,31 +86,21 @@ class _DAPTransport:
         self._writer = writer
         self._seq = 0
 
+    def _get_reader(self) -> asyncio.StreamReader:
+        return self._reader
+
+    def _get_writer(self):
+        return self._writer
+
     async def send(self, message: dict) -> None:
         self._seq += 1
         message.setdefault("seq", self._seq)
         message.setdefault("type", "request")
-        body = json.dumps(message).encode("utf-8")
-        header = f"Content-Length: {len(body)}\r\n\r\n".encode("utf-8")
-        self._writer.write(header + body)
-        await self._writer.drain()
+        await self.send_json(message)
 
     async def recv(self) -> dict:
-        # Read headers
-        header_bytes = b""
-        while True:
-            line = await self._reader.readline()
-            if line in (b"\r\n", b"\n", b""):
-                break
-            header_bytes += line
-
-        content_length = 0
-        for part in header_bytes.split(b"\r\n"):
-            if part.lower().startswith(b"content-length:"):
-                content_length = int(part.split(b":", 1)[1].strip())
-
-        body = await self._reader.readexactly(content_length)
-        return json.loads(body.decode("utf-8"))
+        result = await self.recv_json()
+        return result or {}
 
     async def close(self) -> None:
         self._writer.close()

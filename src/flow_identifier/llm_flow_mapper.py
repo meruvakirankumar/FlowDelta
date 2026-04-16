@@ -197,25 +197,15 @@ Return ONLY a JSON object with this schema (no markdown, no explanation):
     # ------------------------------------------------------------------
 
     def _call_llm(self, graph_json: str) -> str:
-        try:
-            from openai import OpenAI  # lazy import
-        except ImportError as exc:
-            raise ImportError("Install openai: pip install openai>=1.0.0") from exc
-
-        kwargs = {"api_key": self._api_key}
-        if self._base_url:
-            kwargs["base_url"] = self._base_url
-        client = OpenAI(**kwargs)
+        from ..llm_utils import call_llm
         system = self._SYSTEM_PROMPT.format(max_flows=self.max_flows)
-        response = client.chat.completions.create(
+        return call_llm(
+            system_prompt=system,
+            user_content=graph_json,
             model=self.model,
-            temperature=0.2,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": graph_json},
-            ],
+            api_key=self._api_key,
+            base_url=self._base_url,
         )
-        return response.choices[0].message.content or ""
 
     # ------------------------------------------------------------------
     # Response parsing

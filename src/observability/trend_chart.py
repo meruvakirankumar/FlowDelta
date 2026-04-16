@@ -149,11 +149,11 @@ class TrendChartGenerator:
 
         for p in points:
             bar_len = max(1, round(p.total_changes * scale * (width / height)))
-            bar = "█" * bar_len
-            golden_marker = " ★" if p.golden else ""
+            bar = "#" * bar_len
+            golden_marker = " [G]" if p.golden else ""
             print(
                 f"  {p.total_changes:>8}  {p.run_id[:10]:>10}  "
-                f"[cyan]{bar}[/cyan]{golden_marker}"
+                f"{bar}{golden_marker}"
             )
 
         avg = sum(p.total_changes for p in points) / len(points)

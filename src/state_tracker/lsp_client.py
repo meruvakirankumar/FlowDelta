@@ -25,6 +25,8 @@ import sys
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
+from ._framed_transport import FramedTransport
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,11 +59,17 @@ def _make_notification(method: str, params: dict) -> bytes:
 # LSP stdio transport
 # ---------------------------------------------------------------------------
 
-class _LSPTransport:
+class _LSPTransport(FramedTransport):
     def __init__(self, proc: asyncio.subprocess.Process) -> None:
         self._proc = proc
         self._reader = proc.stdout
         self._writer = proc.stdin
+
+    def _get_reader(self):
+        return self._reader
+
+    def _get_writer(self):
+        return self._writer
 
     async def send(self, data: bytes) -> None:
         self._writer.write(data)
@@ -69,24 +77,7 @@ class _LSPTransport:
 
     async def recv(self) -> Optional[dict]:
         try:
-            header_raw = b""
-            while True:
-                line = await asyncio.wait_for(self._reader.readline(), timeout=5.0)
-                if line in (b"\r\n", b"\n", b""):
-                    break
-                header_raw += line
-
-            content_length = 0
-            for part in header_raw.split(b"\r\n"):
-                if part.lower().startswith(b"content-length:"):
-                    content_length = int(part.split(b":", 1)[1].strip())
-
-            if content_length == 0:
-                return None
-            body = await asyncio.wait_for(
-                self._reader.readexactly(content_length), timeout=5.0
-            )
-            return json.loads(body.decode("utf-8"))
+            return await self.recv_json(timeout=5.0)
         except (asyncio.TimeoutError, asyncio.IncompleteReadError):
             return None
 

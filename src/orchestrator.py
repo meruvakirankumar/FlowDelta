@@ -340,22 +340,7 @@ def diff(ctx: click.Context, run_id: str) -> None:
         raise SystemExit(1)
 
     # Reconstruct trace from stored dict
-    snapshots = []
-    for s in raw.get("snapshots", []):
-        snapshots.append(StateSnapshot(
-            event=s["event"],
-            thread_id=s["thread_id"],
-            file=s["file"],
-            line=s["line"],
-            function=s["function"],
-            locals=s["locals"],
-            sequence=s["sequence"],
-        ))
-    trace = FlowTrace(
-        flow_id=raw["flow_id"],
-        run_id=run_id,
-        snapshots=snapshots,
-    )
+    trace = FlowTrace.from_dict(raw, run_id=run_id)
     delta = pipeline.diff(trace)
     delta.print_report()
 
@@ -376,33 +361,9 @@ def generate(ctx: click.Context, flow_id: str, run_id: Optional[str]) -> None:
         raise SystemExit(1)
 
     # Reconstruct TraceDelta from stored dict
-    from .delta_engine.state_diff import TraceDelta, SnapshotDelta, VariableDelta
-    sd_list = []
-    for d in delta_data.get("deltas", []):
-        changes = [
-            VariableDelta(
-                name=c["name"],
-                change_type=c["change_type"],
-                old_value=c.get("old_value"),
-                new_value=c.get("new_value"),
-                old_type=c.get("old_type"),
-                new_type=c.get("new_type"),
-                deep_path=c.get("deep_path", ""),
-            )
-            for c in d.get("changes", [])
-        ]
-        sd_list.append(SnapshotDelta(
-            from_seq=d["from_seq"],
-            to_seq=d["to_seq"],
-            from_location=d["from_location"],
-            to_location=d["to_location"],
-            changes=changes,
-        ))
-    td = TraceDelta(
-        flow_id=flow_id,
-        run_id=delta_data.get("run_id", ""),
-        deltas=sd_list,
-    )
+    from .delta_engine.state_diff import TraceDelta
+    delta_data["flow_id"] = flow_id
+    td = TraceDelta.from_dict(delta_data)
     pipeline.generate(td)
 
 
@@ -461,17 +422,7 @@ def invariants(
         console.print(f"[red]Run '{run_id}' not found.[/red]")
         raise SystemExit(1)
 
-    snapshots = [
-        StateSnapshot(
-            event=s["event"], thread_id=s["thread_id"],
-            file=s["file"], line=s["line"], function=s["function"],
-            locals=s["locals"], sequence=s["sequence"],
-        )
-        for s in raw.get("snapshots", [])
-    ]
-    trace = FlowTrace(
-        flow_id=raw["flow_id"], run_id=run_id, snapshots=snapshots
-    )
+    trace = FlowTrace.from_dict(raw, run_id=run_id)
 
     detector = InvariantDetector(
         min_snapshots=min_snapshots,
@@ -528,28 +479,9 @@ def property_tests(
         console.print(f"[red]No stored delta for flow '{flow_id}'.[/red]")
         raise SystemExit(1)
 
-    from .delta_engine.state_diff import TraceDelta, SnapshotDelta, VariableDelta
-    sd_list = []
-    for d in delta_data.get("deltas", []):
-        changes = [
-            VariableDelta(
-                name=c["name"], change_type=c["change_type"],
-                old_value=c.get("old_value"), new_value=c.get("new_value"),
-                old_type=c.get("old_type"), new_type=c.get("new_type"),
-                deep_path=c.get("deep_path", ""),
-            )
-            for c in d.get("changes", [])
-        ]
-        sd_list.append(SnapshotDelta(
-            from_seq=d["from_seq"], to_seq=d["to_seq"],
-            from_location=d["from_location"], to_location=d["to_location"],
-            changes=changes,
-        ))
-    td = TraceDelta(
-        flow_id=flow_id,
-        run_id=delta_data.get("run_id", ""),
-        deltas=sd_list,
-    )
+    from .delta_engine.state_diff import TraceDelta
+    delta_data["flow_id"] = flow_id
+    td = TraceDelta.from_dict(delta_data)
 
     gen = HypothesisTestGenerator(max_examples=max_examples)
     spec = gen.generate(td)
@@ -641,43 +573,16 @@ def otel_export(
         console.print(f"[red]Run '{run_id}' not found.[/red]")
         raise SystemExit(1)
 
-    snapshots = [
-        StateSnapshot(
-            event=s["event"], thread_id=s["thread_id"],
-            file=s["file"], line=s["line"], function=s["function"],
-            locals=s["locals"], sequence=s["sequence"],
-        )
-        for s in raw.get("snapshots", [])
-    ]
-    trace = FlowTrace(
-        flow_id=flow_id or raw["flow_id"],
-        run_id=run_id,
-        snapshots=snapshots,
-    )
+    trace = FlowTrace.from_dict(raw, run_id=run_id)
+    if flow_id:
+        trace.flow_id = flow_id
 
     delta_data = pipeline.store.load_delta(run_id)
-    from .delta_engine.state_diff import TraceDelta, SnapshotDelta, VariableDelta
+    from .delta_engine.state_diff import TraceDelta
     if delta_data:
-        sd_list = []
-        for d in delta_data.get("deltas", []):
-            changes = [
-                VariableDelta(
-                    name=c["name"], change_type=c["change_type"],
-                    old_value=c.get("old_value"), new_value=c.get("new_value"),
-                    old_type=c.get("old_type"), new_type=c.get("new_type"),
-                    deep_path=c.get("deep_path", ""),
-                )
-                for c in d.get("changes", [])
-            ]
-            sd_list.append(SnapshotDelta(
-                from_seq=d["from_seq"], to_seq=d["to_seq"],
-                from_location=d["from_location"], to_location=d["to_location"],
-                changes=changes,
-            ))
-        delta = TraceDelta(
-            flow_id=flow_id or raw["flow_id"],
-            run_id=run_id, deltas=sd_list,
-        )
+        delta_data["flow_id"] = flow_id or raw["flow_id"]
+        delta_data["run_id"] = run_id
+        delta = TraceDelta.from_dict(delta_data)
     else:
         delta = TraceDelta(flow_id=flow_id or raw["flow_id"], run_id=run_id, deltas=[])
 
